@@ -25,7 +25,7 @@ const STYLES = {
 };
 
 const BORDER = 0.05;
-const STATUS_MAX_WIDTH = 7.0;
+const STATUS_MAX_WIDTH = 6.4;
 
 /** @typedef {'base'|'paytable'|'settings'|'gameOver'} UiLayerName */
 
@@ -101,15 +101,15 @@ export class UiLayer extends EventEmitter {
     this.#getAtlas = getAtlasTexture;
     this.#atlasGrid = atlasGrid;
     this.#buttons = [
-      { id: 'paytable', kind: 'rect', x: -2.45, y: -3.05, w: 0.98, h: 0.4, label: 'btnPaytable', textSize: 0.25, maxTextWidth: 1.7, style: 'wood', layer: 'base' },
-      { id: 'spin', kind: 'circle', x: 0, y: -3.05, w: 0.8, h: 0.8, label: 'btnSpin', textSize: 0.36, style: 'red', layer: 'base', enabled: () => this.#spinEnabled },
+      { id: 'paytable', kind: 'rect', x: -2.45, y: -3.05, w: 0.98, h: 0.4, label: 'btnPaytable', textSize: 0.19, maxTextWidth: 1.6, style: 'wood', layer: 'base' },
+      { id: 'spin', kind: 'circle', x: 0, y: -3.05, w: 0.8, h: 0.8, label: 'btnSpin', textSize: 0.3, style: 'red', layer: 'base', enabled: () => this.#spinEnabled },
       { id: 'settings', kind: 'circle', x: 2.45, y: -3.05, w: 0.42, h: 0.42, icon: 'gear', style: 'wood', layer: 'base' },
-      { id: 'close', kind: 'rect', x: 0, y: -3.85, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.24, style: 'wood', layer: 'paytable' },
-      { id: 'sound', kind: 'rect', x: 1.55, y: 1.45, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#muted ? 'off' : 'on'), textSize: 0.22, style: () => (this.#muted ? 'wood' : 'gold'), layer: 'settings' },
-      { id: 'lang-en', kind: 'rect', x: 0.6, y: 0.45, w: 0.85, h: 0.33, label: () => this.#i18n.t('name', {}, 'en'), textSize: 0.2, style: () => (this.#i18n.language === 'en' ? 'gold' : 'wood'), layer: 'settings' },
-      { id: 'lang-ru', kind: 'rect', x: 2.4, y: 0.45, w: 0.85, h: 0.33, label: () => this.#i18n.t('name', {}, 'ru'), textSize: 0.2, style: () => (this.#i18n.language === 'ru' ? 'gold' : 'wood'), layer: 'settings' },
-      { id: 'close-settings', kind: 'rect', x: 0, y: -0.55, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.24, style: 'wood', layer: 'settings' },
-      { id: 'newGame', kind: 'rect', x: 0, y: 0.0, w: 1.7, h: 0.41, label: 'btnNewGame', textSize: 0.3, maxTextWidth: 3.1, style: 'gold', layer: 'gameOver' },
+      { id: 'close', kind: 'rect', x: 0, y: -3.85, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.2, style: 'wood', layer: 'paytable' },
+      { id: 'sound', kind: 'rect', x: 1.55, y: 1.45, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#muted ? 'off' : 'on'), textSize: 0.18, style: () => (this.#muted ? 'wood' : 'gold'), layer: 'settings' },
+      { id: 'lang-en', kind: 'rect', x: 0.6, y: 0.45, w: 0.85, h: 0.33, label: () => this.#i18n.t('name', {}, 'en'), textSize: 0.17, style: () => (this.#i18n.language === 'en' ? 'gold' : 'wood'), layer: 'settings' },
+      { id: 'lang-ru', kind: 'rect', x: 2.4, y: 0.45, w: 0.85, h: 0.33, label: () => this.#i18n.t('name', {}, 'ru'), textSize: 0.17, style: () => (this.#i18n.language === 'ru' ? 'gold' : 'wood'), layer: 'settings' },
+      { id: 'close-settings', kind: 'rect', x: 0, y: -0.55, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.2, style: 'wood', layer: 'settings' },
+      { id: 'newGame', kind: 'rect', x: 0, y: 0.0, w: 1.7, h: 0.41, label: 'btnNewGame', textSize: 0.24, maxTextWidth: 2.9, style: 'gold', layer: 'gameOver' },
     ];
     this.createResources();
   }
@@ -338,7 +338,7 @@ export class UiLayer extends EventEmitter {
     text.text('21 BELL', mx, baseline, titleSize, { color: [1, 0.96, 0.82, 1], align: 'center', weight: 0.09 });
 
     // display labels
-    const labelSize = 0.23;
+    const labelSize = 0.2;
     const labelColor = [0.91, 0.78, 0.54, 1];
     text.text(t('credits'), LAYOUT.creditsDisplay.center[0], -0.5 - labelSize * 0.5, labelSize, { color: labelColor, align: 'center', tracking: 0.32 });
     text.text(t('winLabel'), LAYOUT.winDisplay.center[0], -0.5 - labelSize * 0.5, labelSize, { color: labelColor, align: 'center', tracking: 0.32 });
@@ -346,13 +346,13 @@ export class UiLayer extends EventEmitter {
     // status line
     if (this.#status.key) {
       const status = t(this.#status.key, this.#status.params);
-      const size = text.fitSize(status, 0.27, STATUS_MAX_WIDTH);
+      const size = text.fitSize(status, 0.21, STATUS_MAX_WIDTH);
       const color = this.#status.isWin ? [1, 0.9, 0.5, 1] : C.cream;
       text.text(status, 0, -2.12 - size * 0.5, size, { color, align: 'center' });
     }
 
     // bet / balance line
-    text.text(t('betLine', { bet: this.#bet, balance: this.#balance }), 0, -3.98 - 0.11, 0.22, { color: C.muted, align: 'center' });
+    text.text(t('betLine', { bet: this.#bet, balance: this.#balance }), 0, -3.98 - 0.09, 0.18, { color: C.muted, align: 'center' });
 
     // dev badge
     if (this.#devReport) {
@@ -402,8 +402,8 @@ export class UiLayer extends EventEmitter {
     this.#drawRect({ x: 0, y: 0.9, w: 3.1, h: 2.05, radius: 0.28, style: 'panel', alpha: 0.97, border: BORDER });
     this.#drawLayerButtons('settings');
     text.text(t('settingsTitle'), 0, 2.4, 0.38, { color: C.gold, align: 'center', weight: 0.085 });
-    text.text(t('settingsSound'), -2.75, 1.45 - 0.12, 0.24, { color: C.cream });
-    text.text(t('settingsLanguage'), -2.75, 0.45 - 0.12, 0.24, { color: C.cream });
+    text.text(t('settingsSound'), -2.75, 1.45 - 0.1, 0.2, { color: C.cream });
+    text.text(t('settingsLanguage'), -2.75, 0.45 - 0.1, 0.2, { color: C.cream });
     text.polyline([-2.75, 0.98, 2.75, 0.98], 0.006, [1, 1, 1, 0.08]);
     this.#drawLayerLabels('settings');
   }
@@ -501,9 +501,9 @@ export class UiLayer extends EventEmitter {
     const press = this.#pressed === b.id ? -0.02 : 0;
     const label = this.#labelOf(b);
     if (label) {
-      const maxWidth = b.maxTextWidth ?? b.w * 2 - 0.3;
+      const maxWidth = b.maxTextWidth ?? b.w * 2 - 0.4;
       const size = this.#text.fitSize(label, b.textSize ?? 0.26, maxWidth);
-      this.#text.text(label, b.x, b.y - size * 0.5 + press, size, { color, align: 'center', weight: 0.09, tracking: 0.26 });
+      this.#text.text(label, b.x, b.y - size * 0.5 + press, size, { color, align: 'center', weight: 0.09, tracking: 0.22 });
     }
     if (b.icon === 'gear') this.#drawGear(b.x, b.y + press, b.w * 0.95, color);
   }
