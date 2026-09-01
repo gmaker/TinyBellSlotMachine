@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>21 Bell — классический WebGL-слот</title>
+    <meta name="description" content="Классический механический однорукий бандит 21 Bell на WebGL2. Только виртуальные монеты." />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <main id="stage" class="stage" aria-label="Игровой автомат 21 Bell">
+        <canvas id="scene" aria-label="Автомат: три барабана и боковая ручка. Потяните ручку вниз, чтобы крутить." role="img"></canvas>
+
+        <!-- DOM labels anchored to world-space points on the cabinet -->
+        <div class="anchor marquee-title" data-anchor="0,4.75" aria-hidden="true">21 BELL</div>
+        <div class="anchor display-label" data-anchor="-1.3,-0.5" aria-hidden="true">Монеты</div>
+        <div class="anchor display-label" data-anchor="1.55,-0.5" aria-hidden="true">Выигрыш</div>
+
+        <div id="game-over" class="modal" role="dialog" aria-labelledby="game-over-title" aria-modal="true" hidden>
+          <div class="modal__card">
+            <h2 id="game-over-title">Монеты закончились</h2>
+            <p>Это игра на виртуальные монеты. Начните заново — баланс снова станет 100.</p>
+            <button id="new-game-button" type="button" class="btn btn--primary">Новая игра</button>
+          </div>
+        </div>
+
+        <div id="context-lost" class="modal" role="alert" hidden>
+          <div class="modal__card">
+            <h2>Контекст WebGL потерян</h2>
+            <p>Игра приостановлена. Ресурсы будут восстановлены автоматически, как только браузер вернёт контекст.</p>
+          </div>
+        </div>
+
+        <div id="webgl-unsupported" class="modal" role="alert" hidden>
+          <div class="modal__card">
+            <h2>WebGL2 недоступен</h2>
+            <p>Для игры нужен браузер с поддержкой WebGL2 (актуальные Chrome, Firefox, Edge, Safari).</p>
+            <p class="detail" data-detail></p>
+          </div>
+        </div>
+      </main>
+
+      <aside id="hud" class="hud" aria-label="Панель управления">
+        <div class="hud__stats">
+          <div class="stat">
+            <span class="stat__label">Баланс</span>
+            <output id="hud-balance" class="stat__value" aria-live="off">100</output>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Ставка</span>
+            <span class="stat__value"><span id="hud-bet">1</span></span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Последний выигрыш</span>
+            <output id="hud-last-win" class="stat__value stat__value--win" aria-live="off">0</output>
+          </div>
+        </div>
+
+        <div class="hud__controls">
+          <button id="spin-button" type="button" class="btn btn--spin" aria-keyshortcuts="Space Enter">SPIN</button>
+          <button id="mute-button" type="button" class="btn btn--icon" aria-pressed="false" aria-label="Выключить звук" aria-keyshortcuts="M">🔊</button>
+        </div>
+
+        <p id="hud-status" class="hud__status" role="status" aria-live="polite">Загрузка…</p>
+
+        <details class="paytable">
+          <summary id="paytable-summary">Таблица выплат</summary>
+          <table>
+            <thead>
+              <tr><th scope="col">Комбинация</th><th scope="col" class="num">Выплата</th><th scope="col" class="num">Шанс</th></tr>
+            </thead>
+            <tbody id="paytable-body"></tbody>
+          </table>
+          <p class="paytable__note">Три физические ленты по 20 стопов. Двойные стопы (например <b>7 + Orange</b>) — это один стоп, совпадающий с обоими символами. Выплаты проверяются сверху вниз, начисляется одна старшая.</p>
+        </details>
+
+        <p class="hud__hint">Управление: тяните ручку мышью/пальцем, кнопка <kbd>SPIN</kbd>, <kbd>Space</kbd>/<kbd>Enter</kbd>. <kbd>M</kbd> — звук.</p>
+
+        <section id="dev-panel" class="dev" hidden aria-label="Dev-панель">
+          <button id="verify-button" type="button" class="btn">verifyMath(): перебрать 8000 исходов</button>
+          <pre id="verify-output" class="dev__output" aria-live="polite"></pre>
+        </section>
+      </aside>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

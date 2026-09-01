@@ -1,0 +1,19 @@
+{
+  "name": "tiny-bell-slot-machine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Classic WebGL2 one-armed bandit that reproduces the 21 Bell math model (virtual coins only).",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/dev-server.mjs --root dist --port 4173"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
