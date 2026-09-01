@@ -105,9 +105,9 @@ export class UiLayer extends EventEmitter {
       { id: 'spin', kind: 'circle', x: 0, y: -3.05, w: 0.8, h: 0.8, label: 'btnSpin', textSize: 0.3, style: 'red', layer: 'base', enabled: () => this.#spinEnabled },
       { id: 'settings', kind: 'circle', x: 2.45, y: -3.05, w: 0.42, h: 0.42, icon: 'gear', style: 'wood', layer: 'base' },
       { id: 'close', kind: 'rect', x: 0, y: -3.85, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.2, style: 'wood', layer: 'paytable' },
-      { id: 'sound', kind: 'rect', x: 1.55, y: 1.45, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#muted ? 'off' : 'on'), textSize: 0.18, style: () => (this.#muted ? 'wood' : 'gold'), layer: 'settings' },
-      { id: 'lang-en', kind: 'rect', x: 0.6, y: 0.45, w: 0.85, h: 0.33, label: () => this.#i18n.t('name', {}, 'en'), textSize: 0.17, style: () => (this.#i18n.language === 'en' ? 'gold' : 'wood'), layer: 'settings' },
-      { id: 'lang-ru', kind: 'rect', x: 2.4, y: 0.45, w: 0.85, h: 0.33, label: () => this.#i18n.t('name', {}, 'ru'), textSize: 0.17, style: () => (this.#i18n.language === 'ru' ? 'gold' : 'wood'), layer: 'settings' },
+      { id: 'sound', kind: 'rect', x: 1.6, y: 1.45, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#muted ? 'off' : 'on'), textSize: 0.18, style: () => (this.#muted ? 'wood' : 'gold'), layer: 'settings' },
+      { id: 'lang-en', kind: 'rect', x: 0.72, y: 0.45, w: 0.82, h: 0.33, label: () => this.#i18n.t('name', {}, 'en'), textSize: 0.17, style: () => (this.#i18n.language === 'en' ? 'gold' : 'wood'), layer: 'settings' },
+      { id: 'lang-ru', kind: 'rect', x: 2.48, y: 0.45, w: 0.82, h: 0.33, label: () => this.#i18n.t('name', {}, 'ru'), textSize: 0.17, style: () => (this.#i18n.language === 'ru' ? 'gold' : 'wood'), layer: 'settings' },
       { id: 'close-settings', kind: 'rect', x: 0, y: -0.55, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.2, style: 'wood', layer: 'settings' },
       { id: 'newGame', kind: 'rect', x: 0, y: 0.0, w: 1.7, h: 0.41, label: 'btnNewGame', textSize: 0.24, maxTextWidth: 2.9, style: 'gold', layer: 'gameOver' },
     ];
@@ -399,12 +399,12 @@ export class UiLayer extends EventEmitter {
   #renderSettings() {
     const text = this.#text;
     const t = (key) => this.#i18n.t(key);
-    this.#drawRect({ x: 0, y: 0.9, w: 3.1, h: 2.05, radius: 0.28, style: 'panel', alpha: 0.97, border: BORDER });
+    this.#drawRect({ x: 0, y: 0.9, w: 3.55, h: 2.05, radius: 0.28, style: 'panel', alpha: 0.97, border: BORDER });
     this.#drawLayerButtons('settings');
     text.text(t('settingsTitle'), 0, 2.4, 0.38, { color: C.gold, align: 'center', weight: 0.085 });
-    text.text(t('settingsSound'), -2.75, 1.45 - 0.1, 0.2, { color: C.cream });
-    text.text(t('settingsLanguage'), -2.75, 0.45 - 0.1, 0.2, { color: C.cream });
-    text.polyline([-2.75, 0.98, 2.75, 0.98], 0.006, [1, 1, 1, 0.08]);
+    text.text(t('settingsSound'), -3.2, 1.45 - 0.1, 0.2, { color: C.cream });
+    text.text(t('settingsLanguage'), -3.2, 0.45 - 0.1, 0.2, { color: C.cream });
+    text.polyline([-3.2, 0.98, 3.2, 0.98], 0.006, [1, 1, 1, 0.08]);
     this.#drawLayerLabels('settings');
   }
 
