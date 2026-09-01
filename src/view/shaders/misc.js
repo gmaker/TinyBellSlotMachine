@@ -40,7 +40,7 @@ void main() {
   col *= 0.95 + 0.05 * vnoise(p * 6.0 + uTime * 0.05);
   // faint wallpaper stripes
   col += 0.012 * sin(p.x * 28.0) * (1.0 - smoothstep(0.4, 1.4, r));
-  col += vec3(0.55, 0.4, 0.15) * uFlash * (1.0 - smoothstep(0.0, 1.6, r));
+  col += vec3(0.4, 0.3, 0.12) * uFlash * (1.0 - smoothstep(0.0, 1.6, r));
   fragColor = vec4(col, 1.0);
 }
 `;
@@ -54,7 +54,7 @@ out vec4 fragColor;
 void main() {
   vec2 p = vec2(vClip.x * uAspect, vClip.y);
   float v = smoothstep(0.55, 1.7, length(p));
-  vec3 flash = vec3(1.0, 0.85, 0.5) * uFlash * 0.28;
+  vec3 flash = vec3(1.0, 0.85, 0.5) * uFlash * 0.18;
   fragColor = vec4(flash, v * 0.62);
 }
 `;

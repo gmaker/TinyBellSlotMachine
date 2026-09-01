@@ -6,9 +6,12 @@ import { LeverController } from '../input/LeverController.js';
 import { REEL_COUNT, STOPS_PER_REEL, enumerateOutcomes, verifyMath } from '../math/SlotMath.js';
 import { ReelSet } from '../reels/ReelSet.js';
 import { DEFAULT_TIMING, REDUCED_MOTION_TIMING } from '../reels/ReelTiming.js';
-import { HudController } from '../ui/HudController.js';
-import { LAYOUT } from '../view/layout.js';
+import { AnimatedCounter } from '../ui/AnimatedCounter.js';
+import { FatalMessage } from '../ui/FatalMessage.js';
+import { UiLayer } from '../ui/UiLayer.js';
+import { ATLAS_SPEC, LAYOUT } from '../view/layout.js';
 import { SlotMachineView } from '../view/SlotMachineView.js';
+import { TextRenderer } from '../view/text/TextRenderer.js';
 import { GameState } from './GameState.js';
 import { CryptoRng } from './Rng.js';
 import { SpinController, SpinPhase } from './SpinController.js';
@@ -16,10 +19,11 @@ import { SpinController, SpinPhase } from './SpinController.js';
 /** Stops shown before the first spin (7 · 7+Orange · Bell — an honest tease). */
 const INITIAL_STOPS = Object.freeze([6, 3, 0]);
 const MAX_FRAME_DT = 0.1;
+const WELCOME = 'ПОТЯНИТЕ РУЧКУ ИЛИ НАЖМИТЕ SPIN';
 
 /**
  * Composition root: builds every subsystem, wires their events and runs the
- * requestAnimationFrame loop.
+ * requestAnimationFrame loop. The whole UI lives inside the WebGL canvas.
  */
 export class Game {
   #canvas;
@@ -30,11 +34,14 @@ export class Game {
   #reelSet;
   #spin;
   #view;
+  #text;
+  #ui;
   #lever;
   #input;
   #audio;
-  #hud;
-  #devMode;
+  #fatal = new FatalMessage();
+  #balanceCounter = new AnimatedCounter(0);
+  #winCounter = new AnimatedCounter(0);
   #frameHandle = 0;
   #lastFrameTime = 0;
   #running = false;
@@ -45,14 +52,12 @@ export class Game {
   /**
    * @param {object} options
    * @param {HTMLCanvasElement} options.canvas
-   * @param {Document|HTMLElement} [options.root]
    * @param {import('./Rng.js').Rng} [options.rng]
    * @param {boolean} [options.devMode]
    */
-  constructor({ canvas, root = document, rng = new CryptoRng(), devMode = false }) {
+  constructor({ canvas, rng = new CryptoRng(), devMode = false }) {
     this.#canvas = canvas;
     this.#rng = rng;
-    this.#devMode = devMode;
 
     this.#reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
     const reducedMotion = Boolean(this.#reducedMotionQuery?.matches);
@@ -69,17 +74,26 @@ export class Game {
       timing: reducedMotion ? REDUCED_MOTION_TIMING : DEFAULT_TIMING,
     });
     this.#view = new SlotMachineView({ renderer: this.#renderer, camera: this.#camera, reelSet: this.#reelSet, reducedMotion });
+    this.#text = new TextRenderer(this.#renderer.gl);
+    this.#ui = new UiLayer({
+      renderer: this.#renderer,
+      camera: this.#camera,
+      text: this.#text,
+      getAtlasTexture: () => this.#view.atlasTexture,
+      atlasGrid: [ATLAS_SPEC.cols, ATLAS_SPEC.rows],
+    });
+    this.#view.setUiLayer(this.#ui);
     this.#lever = new LeverController(LAYOUT.lever);
     this.#input = new InputManager(canvas, this.#camera);
     this.#audio = new AudioEngine();
-    this.#hud = new HudController(root);
 
     this.#wire();
-    this.#hud.renderPaytable(enumerateOutcomes());
-    this.#hud.update(this.#state.snapshot(), true);
-    this.#hud.setMuted(this.#audio.muted);
-    this.#hud.showDevPanel(devMode);
-    this.#hud.announce('Потяните ручку или нажмите SPIN. Ставка 1 монета.');
+    const report = enumerateOutcomes();
+    this.#ui.setPaytableReport(report);
+    if (devMode) this.#ui.setDevReport(verifyMath());
+    this.#syncState(true);
+    this.#ui.setMuted(this.#audio.muted);
+    this.#ui.setStatus(WELCOME);
   }
 
   get state() {
@@ -88,6 +102,10 @@ export class Game {
 
   get spinController() {
     return this.#spin;
+  }
+
+  get ui() {
+    return this.#ui;
   }
 
   start() {
@@ -114,10 +132,12 @@ export class Game {
     this.#cleanups = [];
     this.#resizeObserver?.disconnect();
     this.#input.dispose();
-    this.#hud.dispose();
+    this.#ui.dispose();
+    this.#text.dispose();
     this.#audio.dispose();
     this.#view.dispose();
     this.#renderer.dispose();
+    this.#fatal.hide();
   }
 
   /* -------------------------------------------------------------------- */
@@ -125,19 +145,13 @@ export class Game {
   #wire() {
     const on = (emitter, event, fn) => this.#cleanups.push(emitter.on(event, fn));
 
-    // state → HUD
-    on(this.#state, 'change', (snapshot) => {
-      this.#hud.update(snapshot);
-      this.#hud.setSpinEnabled(this.#spin.isIdle && this.#state.canSpin());
-    });
+    on(this.#state, 'change', () => this.#syncState(false));
 
     // spin controller → presentation
-    on(this.#spin, 'phase', ({ phase }) => {
-      this.#hud.setSpinEnabled(phase === SpinPhase.IDLE && this.#state.canSpin());
-    });
+    on(this.#spin, 'phase', () => this.#syncState(false));
     on(this.#spin, 'spinAccepted', () => {
       this.#view.clearWin();
-      this.#hud.announce('Барабаны крутятся…');
+      this.#ui.setStatus('БАРАБАНЫ КРУТЯТСЯ…');
       this.#audio.playLeverClick();
     });
     on(this.#spin, 'reelTicks', (ticks) => {
@@ -148,66 +162,67 @@ export class Game {
       this.#view.onReelStopped(reelIndex);
     });
     on(this.#spin, 'evaluated', (result) => {
-      this.#hud.showResult(result);
+      this.#ui.setStatus(describeResult(result), result.payout > 0);
       this.#view.triggerWin(result);
       if (result.isJackpot) this.#audio.playJackpot();
       else if (result.payout > 0) this.#audio.playWin(result.payout);
     });
     on(this.#spin, 'idle', () => {
       if (this.#state.isBroke) {
-        this.#hud.announce('Монеты закончились. Нажмите «Новая игра», чтобы начать заново со 100 монетами.');
-        this.#hud.showGameOver(true);
+        this.#ui.setStatus('МОНЕТЫ ЗАКОНЧИЛИСЬ');
+        this.#ui.setGameOver(true);
         this.#audio.playGameOver();
       }
     });
 
-    // HUD → game
-    on(this.#hud, 'spin', () => this.#requestSpin('button'));
-    on(this.#hud, 'mute', () => this.#toggleMute());
-    on(this.#hud, 'newGame', () => {
-      this.#state.reset();
-      this.#view.clearWin();
-      this.#hud.showGameOver(false);
-      this.#hud.update(this.#state.snapshot(), true);
-      this.#hud.announce('Новая игра: 100 монет.');
-      this.#audio.playNewGame();
-    });
-    on(this.#hud, 'verify', () => {
-      try {
-        this.#hud.showVerifyReport(this.verifyMath());
-      } catch (error) {
-        this.#hud.showVerifyReport(/** @type {Error} */ (error));
-      }
-    });
+    // UI → game
+    on(this.#ui, 'spin', () => this.#requestSpin('button'));
+    on(this.#ui, 'mute', () => this.#toggleMute());
+    on(this.#ui, 'newGame', () => this.#newGame());
 
-    // input → lever / game
+    // input → UI / lever / game
     on(this.#input, 'firstInteraction', () => this.#audio.unlock());
-    on(this.#input, 'spin', () => this.#requestSpin('keyboard'));
+    on(this.#input, 'spin', () => {
+      if (this.#ui.gameOver) this.#newGame();
+      else if (!this.#ui.paytableOpen) this.#requestSpin('keyboard');
+    });
     on(this.#input, 'mute', () => this.#toggleMute());
+    on(this.#input, 'paytable', () => this.#ui.togglePaytable());
+    on(this.#input, 'escape', () => this.#ui.setPaytable(false));
+    on(this.#input, 'newGame', () => {
+      if (this.#ui.gameOver) this.#newGame();
+    });
     on(this.#input, 'pointerdown', ({ world }) => {
+      if (this.#ui.pointerDown(world)) return;
       if (this.#lever.pointerDown(world)) {
         this.#canvas.style.cursor = 'grabbing';
         this.#audio.playLeverGrab();
       }
     });
-    on(this.#input, 'pointermove', ({ world }) => this.#lever.pointerMove(world));
-    on(this.#input, 'pointerup', () => {
+    on(this.#input, 'pointermove', ({ world }) => {
+      const overUi = this.#ui.pointerMove(world);
+      this.#lever.pointerMove(world);
+      if (this.#lever.isDragging) return;
+      this.#canvas.style.cursor = overUi ? 'pointer' : this.#lever.isHovering && !this.#ui.modalOpen ? 'grab' : 'default';
+    });
+    on(this.#input, 'pointerup', ({ world }) => {
+      this.#ui.pointerUp(world);
       this.#lever.pointerUp();
       this.#canvas.style.cursor = this.#lever.isHovering ? 'grab' : 'default';
-    });
-    on(this.#lever, 'hover', (hovering) => {
-      if (!this.#lever.isDragging) this.#canvas.style.cursor = hovering ? 'grab' : 'default';
     });
     on(this.#lever, 'pull', () => this.#requestSpin('lever'));
 
     // renderer context loss
     on(this.#renderer, 'contextlost', () => {
       this.stop();
-      this.#hud.showContextLost(true);
+      this.#fatal.show('Контекст WebGL потерян', 'Игра приостановлена и продолжится автоматически, когда браузер вернёт контекст.');
     });
     on(this.#renderer, 'contextrestored', () => {
       this.#view.createResources();
-      this.#hud.showContextLost(false);
+      this.#ui.createResources();
+      this.#text.dispose();
+      this.#text = new TextRenderer(this.#renderer.gl);
+      this.#fatal.hide();
       this.start();
     });
 
@@ -228,37 +243,54 @@ export class Game {
 
     if (typeof ResizeObserver !== 'undefined') {
       this.#resizeObserver = new ResizeObserver(() => this.#handleResize());
-      this.#resizeObserver.observe(this.#canvas.parentElement ?? this.#canvas);
+      this.#resizeObserver.observe(this.#canvas);
     }
     const onWindowResize = () => this.#handleResize();
     window.addEventListener('resize', onWindowResize);
     this.#cleanups.push(() => window.removeEventListener('resize', onWindowResize));
   }
 
+  /** @param {boolean} immediate */
+  #syncState(immediate) {
+    this.#balanceCounter.set(this.#state.balance, immediate);
+    this.#winCounter.set(this.#state.lastWin, immediate);
+    this.#ui.setBet(this.#state.bet);
+    this.#ui.setSpinEnabled(this.#spin.isIdle && this.#state.canSpin());
+  }
+
   /**
    * @param {'lever'|'button'|'keyboard'} source
    */
   #requestSpin(source) {
+    if (this.#ui.modalOpen) return;
     const now = performance.now() / 1000;
     const accepted = this.#spin.requestSpin(now);
     if (accepted) {
       if (source !== 'lever') this.#lever.autoPull();
     } else if (this.#spin.isIdle && this.#state.isBroke) {
-      this.#hud.showGameOver(true);
+      this.#ui.setGameOver(true);
     }
+  }
+
+  #newGame() {
+    this.#state.reset();
+    this.#view.clearWin();
+    this.#ui.setGameOver(false);
+    this.#syncState(true);
+    this.#ui.setStatus('НОВАЯ ИГРА: 100 МОНЕТ');
+    this.#audio.playNewGame();
   }
 
   #toggleMute() {
     const muted = this.#audio.toggleMute();
-    this.#hud.setMuted(muted);
-    this.#hud.announce(muted ? 'Звук выключен' : 'Звук включён');
+    this.#ui.setMuted(muted);
+    this.#ui.setStatus(muted ? 'ЗВУК ВЫКЛЮЧЕН' : 'ЗВУК ВКЛЮЧЁН');
   }
 
   #handleResize() {
     if (this.#renderer.resize()) {
       this.#camera.setViewport(this.#renderer.cssWidth, this.#renderer.cssHeight);
     }
-    this.#hud.layoutAnchors(this.#camera);
   }
 
   #frame = (ms) => {
@@ -269,16 +301,28 @@ export class Game {
 
     this.#spin.update(now);
     this.#lever.update(dt);
-    const coinsCounted = this.#hud.tick(dt);
+    const coinsCounted = this.#balanceCounter.update(dt);
+    this.#winCounter.update(dt);
     if (coinsCounted > 0 && this.#spin.phase === SpinPhase.PAYING) {
       this.#audio.playCoin();
       this.#view.spawnCoins(Math.min(4, coinsCounted), 4.5);
     }
+    this.#ui.setBalance(this.#balanceCounter.rounded);
     this.#view.setLeverAngle(this.#lever.angle);
-    this.#view.setDisplays(this.#hud.displayedBalance, this.#hud.displayedWin);
+    this.#view.setDisplays(this.#balanceCounter.rounded, this.#winCounter.rounded);
     this.#view.update(dt, now);
     if (!this.#renderer.isContextLost) this.#view.render();
 
     this.#frameHandle = requestAnimationFrame(this.#frame);
   };
+}
+
+/**
+ * @param {import('../math/SlotMath.js').SpinResult} result
+ */
+function describeResult(result) {
+  const names = result.stops.map((s) => s.join('+')).join(' · ');
+  if (!result.rule) return `БЕЗ ВЫИГРЫША · ${names}`;
+  const prefix = result.isJackpot ? 'ДЖЕКПОТ!' : 'ВЫИГРЫШ:';
+  return `${prefix} ${result.rule.name.toUpperCase()} +${result.payout}`;
 }

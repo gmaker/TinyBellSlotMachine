@@ -43,7 +43,7 @@ export const LAYOUT = Object.freeze({
     pullTravel: 2.4,
   }),
   /** Rectangle the camera keeps in view (centre + size). */
-  sceneBounds: Object.freeze({ x: 0.55, y: 0, width: 11.2, height: 13.6 }),
+  sceneBounds: Object.freeze({ x: 0.6, y: 0, width: 10.6, height: 13.4 }),
 });
 
 /**

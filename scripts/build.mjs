@@ -12,7 +12,6 @@ rmSync(dist, { recursive: true, force: true });
 mkdirSync(path.join(dist, 'assets'), { recursive: true });
 
 let html = readFileSync(path.join(root, 'index.html'), 'utf8');
-cpSync(path.join(root, 'styles.css'), path.join(dist, 'styles.css'));
 
 let bundled = false;
 try {

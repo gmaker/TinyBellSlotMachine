@@ -44,6 +44,8 @@ export class SlotMachineView {
   #win = new Int32Array(6).fill(-1);
   #fx = { winGlow: 0, payline: 0, flash: 0, shake: 0, displayFlash: 0, highlightStops: [-1, -1, -1] };
   #time = 0;
+  /** @type {{renderBase(time:number):void, renderOverlays(time:number):void}|null} */
+  #ui = null;
 
   /**
    * @param {object} deps
@@ -63,6 +65,20 @@ export class SlotMachineView {
   /** @param {boolean} value */
   set reducedMotion(value) {
     this.#reducedMotion = value;
+  }
+
+  /** Baked symbol atlas texture (also used by the UI for paytable icons). */
+  get atlasTexture() {
+    return /** @type {TextureAtlas} */ (this.#atlas).texture;
+  }
+
+  /**
+   * WebGL UI layer drawn on top of the cabinet (buttons, text) and after the
+   * post pass (modal panels).
+   * @param {{renderBase(time:number):void, renderOverlays(time:number):void}} ui
+   */
+  setUiLayer(ui) {
+    this.#ui = ui;
   }
 
   /** (Re)create every GL resource. Safe to call after a context restore. */
@@ -276,15 +292,21 @@ export class SlotMachineView {
     lever.setVec2('uPivot', L.pivot[0], L.pivot[1]).setFloat('uAngle', this.#leverAngle).setFloat('uLength', L.length).setFloat('uPixel', pixel);
     quad.draw();
 
-    // 8. particles
+    // 8. cabinet-level UI (buttons, labels, status)
+    this.#ui?.renderBase(time);
+
+    // 9. particles
     r.setDepth(false);
     r.setBlend('additive');
     this.#particles?.draw(P.particles, cam, r.height);
 
-    // 9. vignette + flash
+    // 10. vignette + flash
     r.setBlend('premultiplied');
     P.overlay.use().setFloat('uAspect', cam.aspect).setFloat('uFlash', fx.flash);
     r.clipQuad.draw();
+
+    // 11. modal panels (paytable, game over)
+    this.#ui?.renderOverlays(time);
   }
 
   /**
