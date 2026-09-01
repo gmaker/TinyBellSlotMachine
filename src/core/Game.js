@@ -8,6 +8,7 @@ import { ReelSet } from '../reels/ReelSet.js';
 import { DEFAULT_TIMING, REDUCED_MOTION_TIMING } from '../reels/ReelTiming.js';
 import { AnimatedCounter } from '../ui/AnimatedCounter.js';
 import { FatalMessage } from '../ui/FatalMessage.js';
+import { I18n } from '../ui/i18n.js';
 import { UiLayer } from '../ui/UiLayer.js';
 import { ATLAS_SPEC, LAYOUT } from '../view/layout.js';
 import { SlotMachineView } from '../view/SlotMachineView.js';
@@ -19,7 +20,6 @@ import { SpinController, SpinPhase } from './SpinController.js';
 /** Stops shown before the first spin (7 · 7+Orange · Bell — an honest tease). */
 const INITIAL_STOPS = Object.freeze([6, 3, 0]);
 const MAX_FRAME_DT = 0.1;
-const WELCOME = 'ПОТЯНИТЕ РУЧКУ ИЛИ НАЖМИТЕ SPIN';
 
 /**
  * Composition root: builds every subsystem, wires their events and runs the
@@ -36,6 +36,7 @@ export class Game {
   #view;
   #text;
   #ui;
+  #i18n = new I18n();
   #lever;
   #input;
   #audio;
@@ -79,6 +80,7 @@ export class Game {
       renderer: this.#renderer,
       camera: this.#camera,
       text: this.#text,
+      i18n: this.#i18n,
       getAtlasTexture: () => this.#view.atlasTexture,
       atlasGrid: [ATLAS_SPEC.cols, ATLAS_SPEC.rows],
     });
@@ -93,7 +95,7 @@ export class Game {
     if (devMode) this.#ui.setDevReport(verifyMath());
     this.#syncState(true);
     this.#ui.setMuted(this.#audio.muted);
-    this.#ui.setStatus(WELCOME);
+    this.#ui.setStatus('welcome');
   }
 
   get state() {
@@ -151,7 +153,7 @@ export class Game {
     on(this.#spin, 'phase', () => this.#syncState(false));
     on(this.#spin, 'spinAccepted', () => {
       this.#view.clearWin();
-      this.#ui.setStatus('БАРАБАНЫ КРУТЯТСЯ…');
+      this.#ui.setStatus('spinning');
       this.#audio.playLeverClick();
     });
     on(this.#spin, 'reelTicks', (ticks) => {
@@ -162,14 +164,15 @@ export class Game {
       this.#view.onReelStopped(reelIndex);
     });
     on(this.#spin, 'evaluated', (result) => {
-      this.#ui.setStatus(describeResult(result), result.payout > 0);
+      const { key, params } = describeResult(result);
+      this.#ui.setStatus(key, params, result.payout > 0);
       this.#view.triggerWin(result);
       if (result.isJackpot) this.#audio.playJackpot();
       else if (result.payout > 0) this.#audio.playWin(result.payout);
     });
     on(this.#spin, 'idle', () => {
       if (this.#state.isBroke) {
-        this.#ui.setStatus('МОНЕТЫ ЗАКОНЧИЛИСЬ');
+        this.#ui.setStatus('outOfCoins');
         this.#ui.setGameOver(true);
         this.#audio.playGameOver();
       }
@@ -177,18 +180,20 @@ export class Game {
 
     // UI → game
     on(this.#ui, 'spin', () => this.#requestSpin('button'));
-    on(this.#ui, 'mute', () => this.#toggleMute());
+    on(this.#ui, 'sound', () => this.#toggleMute());
+    on(this.#ui, 'language', (code) => this.#i18n.setLanguage(code));
     on(this.#ui, 'newGame', () => this.#newGame());
 
     // input → UI / lever / game
     on(this.#input, 'firstInteraction', () => this.#audio.unlock());
     on(this.#input, 'spin', () => {
       if (this.#ui.gameOver) this.#newGame();
-      else if (!this.#ui.paytableOpen) this.#requestSpin('keyboard');
+      else if (!this.#ui.panel) this.#requestSpin('keyboard');
     });
     on(this.#input, 'mute', () => this.#toggleMute());
-    on(this.#input, 'paytable', () => this.#ui.togglePaytable());
-    on(this.#input, 'escape', () => this.#ui.setPaytable(false));
+    on(this.#input, 'paytable', () => this.#ui.togglePanel('paytable'));
+    on(this.#input, 'settings', () => this.#ui.togglePanel('settings'));
+    on(this.#input, 'escape', () => this.#ui.closePanel());
     on(this.#input, 'newGame', () => {
       if (this.#ui.gameOver) this.#newGame();
     });
@@ -277,14 +282,14 @@ export class Game {
     this.#view.clearWin();
     this.#ui.setGameOver(false);
     this.#syncState(true);
-    this.#ui.setStatus('НОВАЯ ИГРА: 100 МОНЕТ');
+    this.#ui.setStatus('newGame');
     this.#audio.playNewGame();
   }
 
   #toggleMute() {
     const muted = this.#audio.toggleMute();
     this.#ui.setMuted(muted);
-    this.#ui.setStatus(muted ? 'ЗВУК ВЫКЛЮЧЕН' : 'ЗВУК ВКЛЮЧЁН');
+    this.#ui.setStatus(muted ? 'soundOff' : 'soundOn');
   }
 
   #handleResize() {
@@ -319,10 +324,10 @@ export class Game {
 
 /**
  * @param {import('../math/SlotMath.js').SpinResult} result
+ * @returns {{key: string, params: Record<string, string|number>}}
  */
 function describeResult(result) {
-  const names = result.stops.map((s) => s.join('+')).join(' · ');
-  if (!result.rule) return `БЕЗ ВЫИГРЫША · ${names}`;
-  const prefix = result.isJackpot ? 'ДЖЕКПОТ!' : 'ВЫИГРЫШ:';
-  return `${prefix} ${result.rule.name.toUpperCase()} +${result.payout}`;
+  const names = result.stops.map((s) => s.join('+')).join(' · ').toUpperCase();
+  if (!result.rule) return { key: 'noWin', params: { names } };
+  return { key: result.isJackpot ? 'jackpot' : 'win', params: { name: result.rule.name.toUpperCase(), payout: result.payout } };
 }

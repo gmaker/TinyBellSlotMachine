@@ -9,7 +9,6 @@ import { ICON_FRAG, UI_FRAG } from '../view/shaders/ui.js';
 const C = {
   cream: [0.97, 0.9, 0.76, 1],
   gold: [1.0, 0.85, 0.42, 1],
-  goldDeep: [0.85, 0.62, 0.22, 1],
   muted: [0.76, 0.66, 0.5, 1],
   dark: [0.16, 0.09, 0.03, 1],
   white: [1, 1, 1, 1],
@@ -28,6 +27,8 @@ const STYLES = {
 const BORDER = 0.05;
 const STATUS_MAX_WIDTH = 7.0;
 
+/** @typedef {'base'|'paytable'|'settings'|'gameOver'} UiLayerName */
+
 /**
  * @typedef {object} UiButton
  * @property {string} id
@@ -36,23 +37,26 @@ const STATUS_MAX_WIDTH = 7.0;
  * @property {number} y
  * @property {number} w half width (or radius)
  * @property {number} h half height (or radius)
- * @property {string} [label]
- * @property {'speaker'} [icon]
+ * @property {string|(() => string)} [label] i18n key or resolver
+ * @property {'gear'} [icon]
  * @property {number} [textSize]
- * @property {keyof typeof STYLES} style
- * @property {'base'|'paytable'|'gameOver'} layer
+ * @property {keyof typeof STYLES|(() => keyof typeof STYLES)} style
+ * @property {UiLayerName} layer
  * @property {() => boolean} [enabled]
+ * @property {number} [maxTextWidth]
  */
 
 /**
  * Entire game UI drawn in WebGL on top of the cabinet: title, labels, status
- * line, buttons (SPIN / mute / paytable), the paytable and game-over panels.
- * Emits `spin`, `mute`, `newGame`, `paytable`.
+ * line, buttons (SPIN / paytable / settings), the paytable, settings and
+ * game-over panels. Emits `spin`, `sound` (toggle), `language` (code),
+ * `newGame`, `panel` (name|null).
  */
 export class UiLayer extends EventEmitter {
   #renderer;
   #camera;
   #text;
+  #i18n;
   #getAtlas;
   #atlasGrid;
   /** @type {ShaderProgram|null} */
@@ -64,14 +68,15 @@ export class UiLayer extends EventEmitter {
   #hover = null;
   #pressed = null;
 
-  #status = '';
-  #statusIsWin = false;
+  /** @type {{key: string, params: Record<string, string|number>, isWin: boolean}} */
+  #status = { key: '', params: {}, isWin: false };
   #balance = 0;
   #bet = 1;
   #spinEnabled = true;
   #muted = false;
   #gameOver = false;
-  #paytableOpen = false;
+  /** @type {'paytable'|'settings'|null} */
+  #panel = null;
   /** @type {import('../math/SlotMath.js').MathReport|null} */
   #report = null;
   /** @type {import('../math/SlotMath.js').MathReport|null} */
@@ -83,22 +88,28 @@ export class UiLayer extends EventEmitter {
    * @param {import('../gl/WebGLRenderer.js').WebGLRenderer} deps.renderer
    * @param {import('../gl/Camera.js').Camera} deps.camera
    * @param {import('../view/text/TextRenderer.js').TextRenderer} deps.text
+   * @param {import('./i18n.js').I18n} deps.i18n
    * @param {() => WebGLTexture} deps.getAtlasTexture
    * @param {[number, number]} deps.atlasGrid
    */
-  constructor({ renderer, camera, text, getAtlasTexture, atlasGrid }) {
+  constructor({ renderer, camera, text, i18n, getAtlasTexture, atlasGrid }) {
     super();
     this.#renderer = renderer;
     this.#camera = camera;
     this.#text = text;
+    this.#i18n = i18n;
     this.#getAtlas = getAtlasTexture;
     this.#atlasGrid = atlasGrid;
     this.#buttons = [
-      { id: 'paytable', kind: 'rect', x: -2.45, y: -3.05, w: 0.98, h: 0.4, label: 'ТАБЛИЦА', textSize: 0.25, style: 'wood', layer: 'base' },
-      { id: 'spin', kind: 'circle', x: 0, y: -3.05, w: 0.8, h: 0.8, label: 'SPIN', textSize: 0.36, style: 'red', layer: 'base', enabled: () => this.#spinEnabled },
-      { id: 'mute', kind: 'circle', x: 2.45, y: -3.05, w: 0.42, h: 0.42, icon: 'speaker', style: 'wood', layer: 'base' },
-      { id: 'close', kind: 'rect', x: 0, y: -3.85, w: 1.3, h: 0.35, label: 'ЗАКРЫТЬ', textSize: 0.24, style: 'wood', layer: 'paytable' },
-      { id: 'newGame', kind: 'rect', x: 0, y: 0.0, w: 1.7, h: 0.41, label: 'НОВАЯ ИГРА', textSize: 0.3, style: 'gold', layer: 'gameOver' },
+      { id: 'paytable', kind: 'rect', x: -2.45, y: -3.05, w: 0.98, h: 0.4, label: 'btnPaytable', textSize: 0.25, maxTextWidth: 1.7, style: 'wood', layer: 'base' },
+      { id: 'spin', kind: 'circle', x: 0, y: -3.05, w: 0.8, h: 0.8, label: 'btnSpin', textSize: 0.36, style: 'red', layer: 'base', enabled: () => this.#spinEnabled },
+      { id: 'settings', kind: 'circle', x: 2.45, y: -3.05, w: 0.42, h: 0.42, icon: 'gear', style: 'wood', layer: 'base' },
+      { id: 'close', kind: 'rect', x: 0, y: -3.85, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.24, style: 'wood', layer: 'paytable' },
+      { id: 'sound', kind: 'rect', x: 1.55, y: 1.45, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#muted ? 'off' : 'on'), textSize: 0.22, style: () => (this.#muted ? 'wood' : 'gold'), layer: 'settings' },
+      { id: 'lang-en', kind: 'rect', x: 0.6, y: 0.45, w: 0.85, h: 0.33, label: () => this.#i18n.t('name', {}, 'en'), textSize: 0.2, style: () => (this.#i18n.language === 'en' ? 'gold' : 'wood'), layer: 'settings' },
+      { id: 'lang-ru', kind: 'rect', x: 2.4, y: 0.45, w: 0.85, h: 0.33, label: () => this.#i18n.t('name', {}, 'ru'), textSize: 0.2, style: () => (this.#i18n.language === 'ru' ? 'gold' : 'wood'), layer: 'settings' },
+      { id: 'close-settings', kind: 'rect', x: 0, y: -0.55, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.24, style: 'wood', layer: 'settings' },
+      { id: 'newGame', kind: 'rect', x: 0, y: 0.0, w: 1.7, h: 0.41, label: 'btnNewGame', textSize: 0.3, maxTextWidth: 3.1, style: 'gold', layer: 'gameOver' },
     ];
     this.createResources();
   }
@@ -125,12 +136,13 @@ export class UiLayer extends EventEmitter {
   /* ------------------------------- state ------------------------------ */
 
   /**
-   * @param {string} text
+   * Status line as an i18n key so it re-translates when the language changes.
+   * @param {string} key
+   * @param {Record<string, string|number>} [params]
    * @param {boolean} [isWin]
    */
-  setStatus(text, isWin = false) {
-    this.#status = text;
-    this.#statusIsWin = isWin;
+  setStatus(key, params = {}, isWin = false) {
+    this.#status = { key, params, isWin };
   }
 
   /** @param {number} value */
@@ -156,22 +168,32 @@ export class UiLayer extends EventEmitter {
   /** @param {boolean} visible */
   setGameOver(visible) {
     this.#gameOver = visible;
-    if (visible) this.#paytableOpen = false;
+    if (visible) this.#panel = null;
     this.#hover = null;
     this.#pressed = null;
   }
 
-  /** @param {boolean} open */
-  setPaytable(open) {
-    if (this.#gameOver) return;
-    this.#paytableOpen = open;
+  /**
+   * Open a panel (or close all with null). Ignored while game over is shown.
+   * @param {'paytable'|'settings'|null} name
+   */
+  openPanel(name) {
+    if (this.#gameOver && name !== null) return;
+    if (this.#panel === name) return;
+    this.#panel = name;
     this.#hover = null;
     this.#pressed = null;
-    this.emit('paytable', open);
+    this.emit('panel', name);
   }
 
-  togglePaytable() {
-    this.setPaytable(!this.#paytableOpen);
+  /** @param {'paytable'|'settings'} name */
+  togglePanel(name) {
+    this.openPanel(this.#panel === name ? null : name);
+  }
+
+  /** Close whatever panel is open (Escape). */
+  closePanel() {
+    this.openPanel(null);
   }
 
   /** @param {import('../math/SlotMath.js').MathReport} report */
@@ -184,8 +206,8 @@ export class UiLayer extends EventEmitter {
     this.#devReport = report;
   }
 
-  get paytableOpen() {
-    return this.#paytableOpen;
+  get panel() {
+    return this.#panel;
   }
 
   get gameOver() {
@@ -193,13 +215,14 @@ export class UiLayer extends EventEmitter {
   }
 
   get modalOpen() {
-    return this.#gameOver || this.#paytableOpen;
+    return this.#gameOver || this.#panel !== null;
   }
 
   /* ------------------------------- input ------------------------------ */
 
+  /** @returns {UiLayerName} */
   get #activeLayer() {
-    return this.#gameOver ? 'gameOver' : this.#paytableOpen ? 'paytable' : 'base';
+    return this.#gameOver ? 'gameOver' : this.#panel ?? 'base';
   }
 
   /** @param {{x:number,y:number}} world */
@@ -226,9 +249,9 @@ export class UiLayer extends EventEmitter {
       this.#pressed = button.id;
       return true;
     }
-    // a modal swallows every pointer event; clicking outside the paytable closes it
-    if (this.#paytableOpen) {
-      this.setPaytable(false);
+    // a modal swallows every pointer event; clicking outside a panel closes it
+    if (this.#panel) {
+      this.closePanel();
       return true;
     }
     return this.#gameOver;
@@ -259,14 +282,24 @@ export class UiLayer extends EventEmitter {
       case 'spin':
         this.emit('spin');
         break;
-      case 'mute':
-        this.emit('mute');
-        break;
       case 'paytable':
-        this.togglePaytable();
+        this.togglePanel('paytable');
+        break;
+      case 'settings':
+        this.togglePanel('settings');
         break;
       case 'close':
-        this.setPaytable(false);
+      case 'close-settings':
+        this.closePanel();
+        break;
+      case 'sound':
+        this.emit('sound');
+        break;
+      case 'lang-en':
+        this.emit('language', 'en');
+        break;
+      case 'lang-ru':
+        this.emit('language', 'ru');
         break;
       case 'newGame':
         this.emit('newGame');
@@ -289,12 +322,12 @@ export class UiLayer extends EventEmitter {
   renderBase(time) {
     this.#time = time;
     const text = this.#text;
+    const t = (key, params) => this.#i18n.t(key, params);
     text.pixelWorld = this.#pixel;
     this.#renderer.setDepth(false);
     this.#renderer.setBlend('premultiplied');
 
-    // buttons first, text on top
-    for (const b of this.#buttons) if (b.layer === 'base') this.#drawButton(b, 'base');
+    for (const b of this.#buttons) if (b.layer === 'base') this.#drawButton(b);
 
     // marquee title with glow + drop shadow
     const [mx, my] = LAYOUT.marquee.center;
@@ -306,19 +339,20 @@ export class UiLayer extends EventEmitter {
 
     // display labels
     const labelSize = 0.23;
-    text.text('МОНЕТЫ', LAYOUT.creditsDisplay.center[0], -0.5 - labelSize * 0.5, labelSize, { color: [0.91, 0.78, 0.54, 1], align: 'center', tracking: 0.32 });
-    text.text('ВЫИГРЫШ', LAYOUT.winDisplay.center[0], -0.5 - labelSize * 0.5, labelSize, { color: [0.91, 0.78, 0.54, 1], align: 'center', tracking: 0.32 });
+    const labelColor = [0.91, 0.78, 0.54, 1];
+    text.text(t('credits'), LAYOUT.creditsDisplay.center[0], -0.5 - labelSize * 0.5, labelSize, { color: labelColor, align: 'center', tracking: 0.32 });
+    text.text(t('winLabel'), LAYOUT.winDisplay.center[0], -0.5 - labelSize * 0.5, labelSize, { color: labelColor, align: 'center', tracking: 0.32 });
 
     // status line
-    if (this.#status) {
-      const size = text.fitSize(this.#status, 0.27, STATUS_MAX_WIDTH);
-      const color = this.#statusIsWin ? [1, 0.9, 0.5, 1] : C.cream;
-      text.text(this.#status, 0, -2.12 - size * 0.5, size, { color, align: 'center' });
+    if (this.#status.key) {
+      const status = t(this.#status.key, this.#status.params);
+      const size = text.fitSize(status, 0.27, STATUS_MAX_WIDTH);
+      const color = this.#status.isWin ? [1, 0.9, 0.5, 1] : C.cream;
+      text.text(status, 0, -2.12 - size * 0.5, size, { color, align: 'center' });
     }
 
     // bet / balance line
-    const bet = `СТАВКА ${this.#bet} · БАЛАНС ${this.#balance}`;
-    text.text(bet, 0, -3.98 - 0.11, 0.22, { color: C.muted, align: 'center' });
+    text.text(t('betLine', { bet: this.#bet, balance: this.#balance }), 0, -3.98 - 0.11, 0.22, { color: C.muted, align: 'center' });
 
     // dev badge
     if (this.#devReport) {
@@ -327,7 +361,6 @@ export class UiLayer extends EventEmitter {
       text.text(badge, 0, -5.62, 0.17, { color: C.green, align: 'center' });
     }
 
-    // button labels / icons
     for (const b of this.#buttons) if (b.layer === 'base') this.#drawButtonLabel(b);
     text.flush(this.#camera, 0.07);
   }
@@ -346,36 +379,52 @@ export class UiLayer extends EventEmitter {
     this.#drawRect({ x: bx, y: by, w: bw + 0.02, h: bh + 0.02, radius: LAYOUT.body.radius, style: 'dim', alpha: 0.66, border: 0 });
 
     if (this.#gameOver) this.#renderGameOver();
-    else if (this.#paytableOpen) this.#renderPaytable();
+    else if (this.#panel === 'paytable') this.#renderPaytable();
+    else if (this.#panel === 'settings') this.#renderSettings();
     this.#text.flush(this.#camera, 0.08);
   }
 
   #renderGameOver() {
     const text = this.#text;
+    const t = (key) => this.#i18n.t(key);
     this.#drawRect({ x: 0, y: 0.9, w: 3.35, h: 1.72, radius: 0.28, style: 'panel', alpha: 0.97, border: BORDER });
-    for (const b of this.#buttons) if (b.layer === 'gameOver') this.#drawButton(b, 'gameOver');
-    text.text('МОНЕТЫ ЗАКОНЧИЛИСЬ', 0, 1.78, 0.4, { color: C.gold, align: 'center', weight: 0.085 });
-    text.text('ИГРА НА ВИРТУАЛЬНЫЕ МОНЕТЫ', 0, 1.18, 0.21, { color: C.cream, align: 'center' });
-    text.text('НОВАЯ ИГРА — СНОВА 100 МОНЕТ', 0, 0.8, 0.21, { color: C.muted, align: 'center' });
-    for (const b of this.#buttons) if (b.layer === 'gameOver') this.#drawButtonLabel(b);
+    this.#drawLayerButtons('gameOver');
+    const title = t('gameOverTitle');
+    text.text(title, 0, 1.78, text.fitSize(title, 0.4, 6.0), { color: C.gold, align: 'center', weight: 0.085 });
+    text.text(t('gameOverLine1'), 0, 1.18, text.fitSize(t('gameOverLine1'), 0.21, 6.0), { color: C.cream, align: 'center' });
+    text.text(t('gameOverLine2'), 0, 0.8, text.fitSize(t('gameOverLine2'), 0.21, 6.0), { color: C.muted, align: 'center' });
+    this.#drawLayerLabels('gameOver');
+  }
+
+  #renderSettings() {
+    const text = this.#text;
+    const t = (key) => this.#i18n.t(key);
+    this.#drawRect({ x: 0, y: 0.9, w: 3.1, h: 2.05, radius: 0.28, style: 'panel', alpha: 0.97, border: BORDER });
+    this.#drawLayerButtons('settings');
+    text.text(t('settingsTitle'), 0, 2.4, 0.38, { color: C.gold, align: 'center', weight: 0.085 });
+    text.text(t('settingsSound'), -2.75, 1.45 - 0.12, 0.24, { color: C.cream });
+    text.text(t('settingsLanguage'), -2.75, 0.45 - 0.12, 0.24, { color: C.cream });
+    text.polyline([-2.75, 0.98, 2.75, 0.98], 0.006, [1, 1, 1, 0.08]);
+    this.#drawLayerLabels('settings');
   }
 
   #renderPaytable() {
     const text = this.#text;
+    const t = (key, params) => this.#i18n.t(key, params);
     const report = this.#report;
     this.#drawRect({ x: 0, y: 0.45, w: 3.6, h: 4.8, radius: 0.3, style: 'panel', alpha: 0.97, border: BORDER });
-    for (const b of this.#buttons) if (b.layer === 'paytable') this.#drawButton(b, 'paytable');
+    this.#drawLayerButtons('paytable');
 
-    text.text('ТАБЛИЦА ВЫПЛАТ', 0, 4.55, 0.38, { color: C.gold, align: 'center', weight: 0.085 });
+    text.text(t('paytableTitle'), 0, 4.55, 0.38, { color: C.gold, align: 'center', weight: 0.085 });
     if (report) {
-      const sub = `ШАНС ВЫИГРЫША ${(report.hitRate * 100).toFixed(2)}% · RTP ${(report.rtp * 100).toFixed(2)}%`;
+      const sub = t('paytableSub', { hit: (report.hitRate * 100).toFixed(2), rtp: (report.rtp * 100).toFixed(2) });
       text.text(sub, 0, 4.05, 0.2, { color: C.muted, align: 'center' });
     }
     const headY = 3.55;
-    text.text('КОМБИНАЦИЯ', -3.15, headY, 0.16, { color: C.muted });
-    text.text('ВЫПЛАТА', 0.75, headY, 0.16, { color: C.muted, align: 'right' });
-    text.text('ИСХОДОВ', 2.0, headY, 0.16, { color: C.muted, align: 'right' });
-    text.text('ШАНС', 3.25, headY, 0.16, { color: C.muted, align: 'right' });
+    text.text(t('colCombo'), -3.15, headY, 0.16, { color: C.muted });
+    text.text(t('colPayout'), 0.75, headY, 0.16, { color: C.muted, align: 'right' });
+    text.text(t('colHits'), 2.0, headY, 0.16, { color: C.muted, align: 'right' });
+    text.text(t('colChance'), 3.25, headY, 0.16, { color: C.muted, align: 'right' });
     text.polyline([-3.25, headY - 0.14, 3.25, headY - 0.14], 0.008, [0.8, 0.6, 0.24, 0.6]);
 
     const iconSize = 0.5;
@@ -387,7 +436,7 @@ export class UiLayer extends EventEmitter {
       rule.pattern.forEach((symbol, reel) => {
         const cx = iconXs[reel];
         if (symbol === ANY) {
-          text.text('ANY', cx, y - 0.08, 0.16, { color: C.muted, align: 'center' });
+          text.text(t('any'), cx, y - 0.08, 0.16, { color: C.muted, align: 'center' });
         } else {
           this.#drawIcon(cx, y, iconSize, SYMBOL_ATLAS_INDEX[symbol]);
         }
@@ -400,24 +449,44 @@ export class UiLayer extends EventEmitter {
       if (i < PAYTABLE.length - 1) text.polyline([-3.25, y - 0.275, 3.25, y - 0.275], 0.006, [1, 1, 1, 0.07]);
       y -= rowStep;
     });
-    text.text('ДВОЙНОЙ СТОП (7+ORANGE) — ОДИН СТОП, СЧИТАЕТСЯ ЗА ОБА СИМВОЛА', 0, -3.32, 0.13, { color: C.muted, align: 'center' });
-    for (const b of this.#buttons) if (b.layer === 'paytable') this.#drawButtonLabel(b);
+    const note = t('paytableNote');
+    text.text(note, 0, -3.32, text.fitSize(note, 0.13, 6.6), { color: C.muted, align: 'center' });
+    this.#drawLayerLabels('paytable');
   }
 
-  /**
-   * @param {UiButton} b
-   * @param {string} activeLayer
-   */
-  #drawButton(b, activeLayer) {
-    const active = this.#activeLayer === activeLayer;
+  /** @param {UiLayerName} layer */
+  #drawLayerButtons(layer) {
+    for (const b of this.#buttons) if (b.layer === layer) this.#drawButton(b);
+  }
+
+  /** @param {UiLayerName} layer */
+  #drawLayerLabels(layer) {
+    for (const b of this.#buttons) if (b.layer === layer) this.#drawButtonLabel(b);
+  }
+
+  /** @param {UiButton} b */
+  #styleOf(b) {
+    return STYLES[typeof b.style === 'function' ? b.style() : b.style];
+  }
+
+  /** @param {UiButton} b */
+  #labelOf(b) {
+    if (!b.label) return '';
+    return typeof b.label === 'function' ? b.label() : this.#i18n.t(b.label);
+  }
+
+  /** @param {UiButton} b */
+  #drawButton(b) {
+    const active = this.#activeLayer === b.layer;
     const enabled = active && (!b.enabled || b.enabled());
     const hover = active && this.#hover === b.id ? 1 : 0;
     const pressed = active && this.#pressed === b.id ? 1 : 0;
     const glow = b.id === 'spin' && enabled && !this.modalOpen ? 0.5 + 0.5 * Math.sin(this.#time * 2.5) : 0;
+    const styleName = typeof b.style === 'function' ? b.style() : b.style;
     this.#drawRect({
       x: b.x, y: b.y, w: b.w, h: b.h,
       radius: b.kind === 'circle' ? b.w : 0.2,
-      style: b.style,
+      style: styleName,
       alpha: 1,
       border: BORDER,
       state: [hover, pressed, enabled ? 0 : 1, glow * 0.35],
@@ -426,41 +495,47 @@ export class UiLayer extends EventEmitter {
 
   /** @param {UiButton} b */
   #drawButtonLabel(b) {
-    const style = STYLES[b.style];
+    const style = this.#styleOf(b);
     const enabled = !b.enabled || b.enabled();
     const color = enabled ? style.text : [style.text[0], style.text[1], style.text[2], 0.45];
     const press = this.#pressed === b.id ? -0.02 : 0;
-    if (b.label) {
-      const size = b.textSize ?? 0.26;
-      this.#text.text(b.label, b.x, b.y - size * 0.5 + press, size, { color, align: 'center', weight: 0.09, tracking: 0.26 });
+    const label = this.#labelOf(b);
+    if (label) {
+      const maxWidth = b.maxTextWidth ?? b.w * 2 - 0.3;
+      const size = this.#text.fitSize(label, b.textSize ?? 0.26, maxWidth);
+      this.#text.text(label, b.x, b.y - size * 0.5 + press, size, { color, align: 'center', weight: 0.09, tracking: 0.26 });
     }
-    if (b.icon === 'speaker') this.#drawSpeaker(b.x, b.y + press, b.w * 0.95, color);
+    if (b.icon === 'gear') this.#drawGear(b.x, b.y + press, b.w * 0.95, color);
   }
 
   /**
-   * Speaker icon as polylines; crossed out when muted.
+   * Gear icon as polylines (settings). A red slash marks muted sound.
    * @param {number} cx
    * @param {number} cy
    * @param {number} s scale
    * @param {number[]} color
    */
-  #drawSpeaker(cx, cy, s, color) {
+  #drawGear(cx, cy, s, color) {
     const t = this.#text;
     const w = 0.045 * s;
-    const body = [-0.42, -0.16, -0.2, -0.16, 0.1, -0.4, 0.1, 0.4, -0.2, 0.16, -0.42, 0.16].map((v, i) => (i % 2 === 0 ? cx + v * s : cy + v * s));
-    t.polyline(body, w, color, true);
+    const teeth = 8;
+    const pts = [];
+    for (let i = 0; i < teeth * 2; i++) {
+      const a = (Math.PI * 2 * i) / (teeth * 2) - Math.PI / (teeth * 2);
+      const r = i % 2 === 0 ? 0.52 : 0.36;
+      pts.push(cx + Math.cos(a) * r * s, cy + Math.sin(a) * r * s);
+      const a2 = (Math.PI * 2 * (i + 1)) / (teeth * 2) - Math.PI / (teeth * 2);
+      pts.push(cx + Math.cos(a2 - 0.02) * r * s, cy + Math.sin(a2 - 0.02) * r * s);
+    }
+    t.polyline(pts, w, color, true);
+    const hub = [];
+    for (let i = 0; i <= 12; i++) {
+      const a = (Math.PI * 2 * i) / 12;
+      hub.push(cx + Math.cos(a) * 0.16 * s, cy + Math.sin(a) * 0.16 * s);
+    }
+    t.polyline(hub, w, color);
     if (this.#muted) {
-      t.polyline([cx + 0.24 * s, cy - 0.2 * s, cx + 0.56 * s, cy + 0.2 * s], w, C.red);
-      t.polyline([cx + 0.24 * s, cy + 0.2 * s, cx + 0.56 * s, cy - 0.2 * s], w, C.red);
-    } else {
-      for (const r of [0.22, 0.4]) {
-        const pts = [];
-        for (let i = 0; i <= 6; i++) {
-          const a = ((-40 + (80 * i) / 6) * Math.PI) / 180;
-          pts.push(cx + 0.14 * s + Math.cos(a) * r * s, cy + Math.sin(a) * r * s);
-        }
-        t.polyline(pts, w, color);
-      }
+      t.polyline([cx + 0.3 * s, cy - 0.62 * s, cx + 0.62 * s, cy - 0.3 * s], w * 1.2, C.red);
     }
   }
 

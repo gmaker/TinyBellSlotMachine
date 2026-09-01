@@ -5,7 +5,7 @@ import { EventEmitter } from '../core/EventEmitter.js';
  * to world coordinates on the machine's front plane and emits:
  * `pointerdown` / `pointermove` / `pointerup` ({x, y, world, pointerId}),
  * `spin` (Space/Enter), `mute` (M), `paytable` (T or P), `escape`,
- * `newGame` (N), `firstInteraction` (once).
+ * `newGame` (N), `settings` (S), `firstInteraction` (once).
  */
 export class InputManager extends EventEmitter {
   #canvas;
@@ -49,8 +49,9 @@ export class InputManager extends EventEmitter {
         KeyP: 'paytable',
         Escape: 'escape',
         KeyN: 'newGame',
+        KeyS: 'settings',
       };
-      const byKey = { ' ': 'spin', Enter: 'spin', m: 'mute', ь: 'mute', t: 'paytable', е: 'paytable', p: 'paytable', з: 'paytable', Escape: 'escape', Esc: 'escape', n: 'newGame', т: 'newGame' };
+      const byKey = { ' ': 'spin', Enter: 'spin', m: 'mute', ь: 'mute', t: 'paytable', е: 'paytable', p: 'paytable', з: 'paytable', Escape: 'escape', Esc: 'escape', n: 'newGame', т: 'newGame', s: 'settings', ы: 'settings' };
       const event = byCode[e.code] ?? byKey[e.key?.toLowerCase?.() ?? ''] ?? byKey[e.key];
       if (!event) return;
       e.preventDefault();
