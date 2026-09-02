@@ -23,7 +23,8 @@ void main() {
   float stopOffset = uPosition - (aData.x + aData.y - 0.5); // > 0 above the pay line
   float ang = stopOffset * uStopAngle;
   vec3 p = vec3((aData.z - 0.5) * uWidth, uRadius * sin(ang), uRadius * cos(ang) - uRadius);
-  vAngle = ang;
+  // wrap to [-PI, PI) so shading stays correct while the position runs far beyond one turn
+  vAngle = mod(ang + 3.14159265, 6.28318531) - 3.14159265;
   vUv = vec2(aData.z, aData.y);
   vSymbols = aSymbols;
   vStop = aData.x;

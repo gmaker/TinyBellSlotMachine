@@ -31,19 +31,19 @@ export const LAYOUT = Object.freeze({
     symbolSize: 1.0,
   }),
   lever: Object.freeze({
-    pivot: [4.5, 1.0],
+    pivot: [4.25, 1.0],
     length: 2.6,
     /** Fully pulled angle (radians from "up"). */
     maxAngle: 1.9,
     /** Quad that contains the lever in every pose. */
-    quad: Object.freeze({ center: [4.72, 1.6], half: [1.05, 2.65] }),
+    quad: Object.freeze({ center: [4.5, 1.6], half: [1.1, 2.65] }),
     /** Hit radius around the knob for pointer grabbing. */
     grabRadius: 0.75,
     /** Vertical pointer travel (world units) for a full pull. */
     pullTravel: 2.4,
   }),
   /** Rectangle the camera keeps in view (centre + size). */
-  sceneBounds: Object.freeze({ x: 0.6, y: 0, width: 10.6, height: 13.4 }),
+  sceneBounds: Object.freeze({ x: 0.45, y: 0, width: 10.3, height: 13.4 }),
 });
 
 /**
