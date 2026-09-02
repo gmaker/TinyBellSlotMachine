@@ -50,7 +50,7 @@ const STATUS_MAX_WIDTH = 6.4;
 /**
  * Entire game UI drawn in WebGL on top of the cabinet: title, labels, status
  * line, buttons (SPIN / paytable / settings), the paytable, settings and
- * game-over panels. Emits `spin`, `bet` (coins), `sound` (toggle),
+ * game-over panels. Emits `spin`, `bet` (coins), `music` (toggle), `sfx` (toggle),
  * `language` (code), `newGame`, `panel` (name|null).
  */
 export class UiLayer extends EventEmitter {
@@ -75,7 +75,8 @@ export class UiLayer extends EventEmitter {
   #bet = 1;
   #betEnabled = true;
   #spinEnabled = true;
-  #muted = false;
+  #musicMuted = false;
+  #sfxMuted = false;
   #gameOver = false;
   /** @type {'paytable'|'settings'|null} */
   #panel = null;
@@ -120,10 +121,11 @@ export class UiLayer extends EventEmitter {
         enabled: () => this.#betEnabled,
       })),
       { id: 'close', kind: 'rect', x: 0, y: -3.85, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.2, style: 'wood', layer: 'paytable' },
-      { id: 'sound', kind: 'rect', x: 1.6, y: 1.45, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#muted ? 'off' : 'on'), textSize: 0.18, style: () => (this.#muted ? 'wood' : 'gold'), layer: 'settings' },
-      { id: 'lang-en', kind: 'rect', x: 0.72, y: 0.45, w: 0.82, h: 0.33, label: () => this.#i18n.t('name', {}, 'en'), textSize: 0.17, style: () => (this.#i18n.language === 'en' ? 'gold' : 'wood'), layer: 'settings' },
-      { id: 'lang-ru', kind: 'rect', x: 2.48, y: 0.45, w: 0.82, h: 0.33, label: () => this.#i18n.t('name', {}, 'ru'), textSize: 0.17, style: () => (this.#i18n.language === 'ru' ? 'gold' : 'wood'), layer: 'settings' },
-      { id: 'close-settings', kind: 'rect', x: 0, y: -0.55, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.2, style: 'wood', layer: 'settings' },
+      { id: 'music', kind: 'rect', x: 1.6, y: 1.95, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#musicMuted ? 'off' : 'on'), textSize: 0.18, style: () => (this.#musicMuted ? 'wood' : 'gold'), layer: 'settings' },
+      { id: 'sfx', kind: 'rect', x: 1.6, y: 1.15, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#sfxMuted ? 'off' : 'on'), textSize: 0.18, style: () => (this.#sfxMuted ? 'wood' : 'gold'), layer: 'settings' },
+      { id: 'lang-en', kind: 'rect', x: 0.72, y: 0.35, w: 0.82, h: 0.33, label: () => this.#i18n.t('name', {}, 'en'), textSize: 0.17, style: () => (this.#i18n.language === 'en' ? 'gold' : 'wood'), layer: 'settings' },
+      { id: 'lang-ru', kind: 'rect', x: 2.48, y: 0.35, w: 0.82, h: 0.33, label: () => this.#i18n.t('name', {}, 'ru'), textSize: 0.17, style: () => (this.#i18n.language === 'ru' ? 'gold' : 'wood'), layer: 'settings' },
+      { id: 'close-settings', kind: 'rect', x: 0, y: -0.75, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.2, style: 'wood', layer: 'settings' },
       { id: 'newGame', kind: 'rect', x: 0, y: 0.0, w: 1.7, h: 0.41, label: 'btnNewGame', textSize: 0.24, maxTextWidth: 2.9, style: 'gold', layer: 'gameOver' },
     ];
     this.createResources();
@@ -180,9 +182,12 @@ export class UiLayer extends EventEmitter {
     this.#spinEnabled = enabled;
   }
 
-  /** @param {boolean} muted */
-  setMuted(muted) {
-    this.#muted = muted;
+  /**
+   * @param {{music: boolean, sfx: boolean}} muted per-bus mute flags
+   */
+  setAudioMuted({ music, sfx }) {
+    this.#musicMuted = music;
+    this.#sfxMuted = sfx;
   }
 
   /** @param {boolean} visible */
@@ -312,8 +317,11 @@ export class UiLayer extends EventEmitter {
       case 'close-settings':
         this.closePanel();
         break;
-      case 'sound':
-        this.emit('sound');
+      case 'music':
+        this.emit('music');
+        break;
+      case 'sfx':
+        this.emit('sfx');
         break;
       case 'lang-en':
         this.emit('language', 'en');
@@ -423,12 +431,14 @@ export class UiLayer extends EventEmitter {
   #renderSettings() {
     const text = this.#text;
     const t = (key) => this.#i18n.t(key);
-    this.#drawRect({ x: 0, y: 0.9, w: 3.55, h: 2.05, radius: 0.28, style: 'panel', alpha: 0.97, border: BORDER });
+    this.#drawRect({ x: 0, y: 0.9, w: 3.55, h: 2.45, radius: 0.28, style: 'panel', alpha: 0.97, border: BORDER });
     this.#drawLayerButtons('settings');
-    text.text(t('settingsTitle'), 0, 2.4, 0.38, { color: C.gold, align: 'center', weight: 0.085 });
-    text.text(t('settingsSound'), -3.2, 1.45 - 0.1, 0.2, { color: C.cream });
-    text.text(t('settingsLanguage'), -3.2, 0.45 - 0.1, 0.2, { color: C.cream });
-    text.polyline([-3.2, 0.98, 3.2, 0.98], 0.006, [1, 1, 1, 0.08]);
+    text.text(t('settingsTitle'), 0, 2.72, 0.38, { color: C.gold, align: 'center', weight: 0.085 });
+    text.text(t('settingsMusic'), -3.2, 1.95 - 0.1, 0.2, { color: C.cream });
+    text.text(t('settingsSound'), -3.2, 1.15 - 0.1, 0.2, { color: C.cream });
+    text.text(t('settingsLanguage'), -3.2, 0.35 - 0.1, 0.2, { color: C.cream });
+    text.polyline([-3.2, 1.55, 3.2, 1.55], 0.006, [1, 1, 1, 0.08]);
+    text.polyline([-3.2, 0.75, 3.2, 0.75], 0.006, [1, 1, 1, 0.08]);
     this.#drawLayerLabels('settings');
   }
 
@@ -558,7 +568,7 @@ export class UiLayer extends EventEmitter {
       hub.push(cx + Math.cos(a) * 0.16 * s, cy + Math.sin(a) * 0.16 * s);
     }
     t.polyline(hub, w, color);
-    if (this.#muted) {
+    if (this.#musicMuted && this.#sfxMuted) {
       t.polyline([cx + 0.3 * s, cy - 0.62 * s, cx + 0.62 * s, cy - 0.3 * s], w * 1.2, C.red);
     }
   }

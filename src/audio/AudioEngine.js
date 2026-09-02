@@ -1,6 +1,8 @@
 import { MusicScheduler } from './MusicScheduler.js';
 
-const STORAGE_KEY = 'tinybell.muted';
+const LEGACY_STORAGE_KEY = 'tinybell.muted';
+const MUSIC_STORAGE_KEY = 'tinybell.music.muted';
+const SFX_STORAGE_KEY = 'tinybell.sfx.muted';
 const MASTER_GAIN = 0.85;
 const MUSIC_GAIN = 0.5;
 const SFX_GAIN = 0.9;
@@ -15,6 +17,7 @@ const C5 = 3;
  * Web Audio graph: sfx bus + music bus → master gain → limiter → destination.
  * The AudioContext is created lazily on the first user gesture (`unlock`).
  * Every sound is synthesized; nothing is loaded from disk.
+ * Music and sound effects can be muted independently; both choices persist.
  */
 export class AudioEngine {
   /** @type {AudioContext|null} */
@@ -29,7 +32,8 @@ export class AudioEngine {
   #noise = null;
   /** @type {MusicScheduler|null} */
   #scheduler = null;
-  #muted = false;
+  #musicMuted = false;
+  #sfxMuted = false;
   #suspended = false;
   #unlocked = false;
   #lastTick = new Map();
@@ -39,11 +43,22 @@ export class AudioEngine {
   /** @param {Storage|null} [storage] */
   constructor(storage = safeStorage()) {
     this.#storage = storage;
-    this.#muted = this.#storage?.getItem(STORAGE_KEY) === '1';
+    const legacyMuted = this.#storage?.getItem(LEGACY_STORAGE_KEY) === '1';
+    this.#musicMuted = (this.#storage?.getItem(MUSIC_STORAGE_KEY) ?? (legacyMuted ? '1' : '0')) === '1';
+    this.#sfxMuted = (this.#storage?.getItem(SFX_STORAGE_KEY) ?? (legacyMuted ? '1' : '0')) === '1';
   }
 
+  /** True when both music and effects are muted. */
   get muted() {
-    return this.#muted;
+    return this.#musicMuted && this.#sfxMuted;
+  }
+
+  get musicMuted() {
+    return this.#musicMuted;
+  }
+
+  get sfxMuted() {
+    return this.#sfxMuted;
   }
 
   get isUnlocked() {
@@ -64,23 +79,55 @@ export class AudioEngine {
       }
     }
     this.#unlocked = true;
-    this.#scheduler?.start();
+    if (!this.#musicMuted) this.#scheduler?.start();
   }
 
   /** @param {boolean} muted */
-  setMuted(muted) {
-    this.#muted = muted;
-    this.#storage?.setItem(STORAGE_KEY, muted ? '1' : '0');
-    if (this.#master && this.#ctx) {
-      const t = this.#ctx.currentTime;
-      this.#master.gain.cancelScheduledValues(t);
-      this.#master.gain.setTargetAtTime(muted ? 0 : MASTER_GAIN, t, 0.03);
-    }
+  setMusicMuted(muted) {
+    this.#musicMuted = muted;
+    this.#storage?.setItem(MUSIC_STORAGE_KEY, muted ? '1' : '0');
+    this.#rampBus(this.#music, muted ? 0 : MUSIC_GAIN);
+    if (muted) this.#scheduler?.stop();
+    else if (this.#unlocked && !this.#suspended) this.#scheduler?.start();
   }
 
+  /** @param {boolean} muted */
+  setSfxMuted(muted) {
+    this.#sfxMuted = muted;
+    this.#storage?.setItem(SFX_STORAGE_KEY, muted ? '1' : '0');
+    this.#rampBus(this.#sfx, muted ? 0 : SFX_GAIN);
+  }
+
+  toggleMusic() {
+    this.setMusicMuted(!this.#musicMuted);
+    return this.#musicMuted;
+  }
+
+  toggleSfx() {
+    this.setSfxMuted(!this.#sfxMuted);
+    return this.#sfxMuted;
+  }
+
+  /**
+   * Mute everything, or unmute everything when both buses are silent.
+   * @returns {boolean} new "all muted" state
+   */
   toggleMute() {
-    this.setMuted(!this.#muted);
-    return this.#muted;
+    const mute = !this.muted;
+    this.setMusicMuted(mute);
+    this.setSfxMuted(mute);
+    return this.muted;
+  }
+
+  /**
+   * @param {GainNode|null} bus
+   * @param {number} target
+   */
+  #rampBus(bus, target) {
+    if (!bus || !this.#ctx) return;
+    const t = this.#ctx.currentTime;
+    bus.gain.cancelScheduledValues(t);
+    bus.gain.setTargetAtTime(target, t, 0.03);
   }
 
   /**
@@ -96,7 +143,9 @@ export class AudioEngine {
     } else {
       this.#ctx
         .resume()
-        .then(() => this.#scheduler?.start())
+        .then(() => {
+          if (!this.#musicMuted) this.#scheduler?.start();
+        })
         .catch(() => {});
     }
   }
@@ -259,15 +308,15 @@ export class AudioEngine {
     limiter.connect(ctx.destination);
 
     this.#master = ctx.createGain();
-    this.#master.gain.value = this.#muted ? 0 : MASTER_GAIN;
+    this.#master.gain.value = MASTER_GAIN;
     this.#master.connect(limiter);
 
     this.#music = ctx.createGain();
-    this.#music.gain.value = MUSIC_GAIN;
+    this.#music.gain.value = this.#musicMuted ? 0 : MUSIC_GAIN;
     this.#music.connect(this.#master);
 
     this.#sfx = ctx.createGain();
-    this.#sfx.gain.value = SFX_GAIN;
+    this.#sfx.gain.value = this.#sfxMuted ? 0 : SFX_GAIN;
     this.#sfx.connect(this.#master);
 
     const seconds = 2;
@@ -279,8 +328,9 @@ export class AudioEngine {
     this.#scheduler = new MusicScheduler(ctx, this.#music, noise);
   }
 
-  /** @returns {AudioContext|null} context if sound can be played right now */
+  /** @returns {AudioContext|null} context if an effect can be played right now */
   #ready() {
+    if (this.#sfxMuted) return null;
     if (!this.#ctx || !this.#unlocked || this.#suspended || this.#ctx.state !== 'running') return null;
     return this.#ctx;
   }

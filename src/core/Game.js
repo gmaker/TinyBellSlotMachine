@@ -94,7 +94,7 @@ export class Game {
     this.#ui.setPaytableReport(report);
     if (devMode) this.#ui.setDevReport(verifyMath());
     this.#syncState(true);
-    this.#ui.setMuted(this.#audio.muted);
+    this.#syncAudioUi();
     this.#ui.setStatus('welcome');
   }
 
@@ -181,7 +181,16 @@ export class Game {
     // UI → game
     on(this.#ui, 'spin', () => this.#requestSpin('button'));
     on(this.#ui, 'bet', (bet) => this.#setBet(bet));
-    on(this.#ui, 'sound', () => this.#toggleMute());
+    on(this.#ui, 'music', () => {
+      const muted = this.#audio.toggleMusic();
+      this.#syncAudioUi();
+      this.#ui.setStatus(muted ? 'musicOff' : 'musicOn');
+    });
+    on(this.#ui, 'sfx', () => {
+      const muted = this.#audio.toggleSfx();
+      this.#syncAudioUi();
+      this.#ui.setStatus(muted ? 'sfxOff' : 'sfxOn');
+    });
     on(this.#ui, 'language', (code) => this.#i18n.setLanguage(code));
     on(this.#ui, 'newGame', () => this.#newGame());
 
@@ -299,10 +308,15 @@ export class Game {
     this.#audio.playNewGame();
   }
 
+  /** M key: mute or unmute music and effects together. */
   #toggleMute() {
     const muted = this.#audio.toggleMute();
-    this.#ui.setMuted(muted);
+    this.#syncAudioUi();
     this.#ui.setStatus(muted ? 'soundOff' : 'soundOn');
+  }
+
+  #syncAudioUi() {
+    this.#ui.setAudioMuted({ music: this.#audio.musicMuted, sfx: this.#audio.sfxMuted });
   }
 
   #handleResize() {
