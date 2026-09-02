@@ -5,7 +5,8 @@ import { EventEmitter } from '../core/EventEmitter.js';
  * to world coordinates on the machine's front plane and emits:
  * `pointerdown` / `pointermove` / `pointerup` ({x, y, world, pointerId}),
  * `spin` (Space/Enter), `mute` (M), `paytable` (T or P), `escape`,
- * `newGame` (N), `settings` (S), `firstInteraction` (once).
+ * `newGame` (N), `settings` (S), `bet1`/`bet2`/`bet3` (keys 1, 2, 3 → 1×/5×/10×),
+ * `firstInteraction` (once).
  */
 export class InputManager extends EventEmitter {
   #canvas;
@@ -50,8 +51,11 @@ export class InputManager extends EventEmitter {
         Escape: 'escape',
         KeyN: 'newGame',
         KeyS: 'settings',
+        Digit1: 'bet1',
+        Digit2: 'bet2',
+        Digit3: 'bet3',
       };
-      const byKey = { ' ': 'spin', Enter: 'spin', m: 'mute', ь: 'mute', t: 'paytable', е: 'paytable', p: 'paytable', з: 'paytable', Escape: 'escape', Esc: 'escape', n: 'newGame', т: 'newGame', s: 'settings', ы: 'settings' };
+      const byKey = { ' ': 'spin', Enter: 'spin', m: 'mute', ь: 'mute', t: 'paytable', е: 'paytable', p: 'paytable', з: 'paytable', Escape: 'escape', Esc: 'escape', n: 'newGame', т: 'newGame', s: 'settings', ы: 'settings', 1: 'bet1', 2: 'bet2', 3: 'bet3' };
       const event = byCode[e.code] ?? byKey[e.key?.toLowerCase?.() ?? ''] ?? byKey[e.key];
       if (!event) return;
       e.preventDefault();

@@ -35,7 +35,8 @@ test('language switch is persisted and emits change', () => {
 
 test('placeholders are interpolated and every bundle has every key', () => {
   const i18n = new I18n(new MemoryStorage());
-  assert.equal(i18n.t('betLine', { bet: 1, balance: 100 }), 'BET 1 · BALANCE 100');
+  assert.equal(i18n.t('balanceLine', { balance: 100 }), 'BALANCE 100');
+  assert.equal(i18n.t('insufficient', { bet: 10 }, 'ru'), 'НЕ ХВАТАЕТ МОНЕТ НА СТАВКУ 10');
   assert.equal(i18n.t('win', { name: 'BELL, BELL, BAR', payout: 18 }, 'ru'), 'ВЫИГРЫШ: BELL, BELL, BAR +18');
   const keys = Object.keys(BUNDLES.en).sort();
   for (const lang of LANGUAGES) {

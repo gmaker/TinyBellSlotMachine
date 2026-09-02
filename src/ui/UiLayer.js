@@ -1,5 +1,6 @@
 import { EventEmitter } from '../core/EventEmitter.js';
 import { ShaderProgram } from '../gl/ShaderProgram.js';
+import { BET_OPTIONS } from '../core/GameState.js';
 import { ANY, PAYTABLE } from '../math/SlotMath.js';
 import { LAYOUT, SYMBOL_ATLAS_INDEX } from '../view/layout.js';
 import { QUAD_VERT } from '../view/shaders/common.js';
@@ -49,8 +50,8 @@ const STATUS_MAX_WIDTH = 6.4;
 /**
  * Entire game UI drawn in WebGL on top of the cabinet: title, labels, status
  * line, buttons (SPIN / paytable / settings), the paytable, settings and
- * game-over panels. Emits `spin`, `sound` (toggle), `language` (code),
- * `newGame`, `panel` (name|null).
+ * game-over panels. Emits `spin`, `bet` (coins), `sound` (toggle),
+ * `language` (code), `newGame`, `panel` (name|null).
  */
 export class UiLayer extends EventEmitter {
   #renderer;
@@ -72,6 +73,7 @@ export class UiLayer extends EventEmitter {
   #status = { key: '', params: {}, isWin: false };
   #balance = 0;
   #bet = 1;
+  #betEnabled = true;
   #spinEnabled = true;
   #muted = false;
   #gameOver = false;
@@ -104,6 +106,19 @@ export class UiLayer extends EventEmitter {
       { id: 'paytable', kind: 'rect', x: -2.45, y: -3.05, w: 0.98, h: 0.4, label: 'btnPaytable', textSize: 0.19, maxTextWidth: 1.6, style: 'wood', layer: 'base' },
       { id: 'spin', kind: 'circle', x: 0, y: -3.05, w: 0.8, h: 0.8, label: 'btnSpin', textSize: 0.3, style: 'red', layer: 'base', enabled: () => this.#spinEnabled },
       { id: 'settings', kind: 'circle', x: 2.45, y: -3.05, w: 0.42, h: 0.42, icon: 'gear', style: 'wood', layer: 'base' },
+      ...BET_OPTIONS.map((bet, i) => ({
+        id: `bet-${bet}`,
+        kind: /** @type {'rect'} */ ('rect'),
+        x: -1.05 + i * 0.95,
+        y: -4.15,
+        w: 0.42,
+        h: 0.25,
+        label: () => `${bet}×`,
+        textSize: 0.2,
+        style: () => (this.#bet === bet ? 'gold' : 'wood'),
+        layer: /** @type {UiLayerName} */ ('base'),
+        enabled: () => this.#betEnabled,
+      })),
       { id: 'close', kind: 'rect', x: 0, y: -3.85, w: 1.3, h: 0.35, label: 'btnClose', textSize: 0.2, style: 'wood', layer: 'paytable' },
       { id: 'sound', kind: 'rect', x: 1.6, y: 1.45, w: 0.95, h: 0.33, label: () => this.#i18n.t(this.#muted ? 'off' : 'on'), textSize: 0.18, style: () => (this.#muted ? 'wood' : 'gold'), layer: 'settings' },
       { id: 'lang-en', kind: 'rect', x: 0.72, y: 0.45, w: 0.82, h: 0.33, label: () => this.#i18n.t('name', {}, 'en'), textSize: 0.17, style: () => (this.#i18n.language === 'en' ? 'gold' : 'wood'), layer: 'settings' },
@@ -153,6 +168,11 @@ export class UiLayer extends EventEmitter {
   /** @param {number} value */
   setBet(value) {
     this.#bet = value;
+  }
+
+  /** @param {boolean} enabled whether the bet toggles react (no spin running) */
+  setBetEnabled(enabled) {
+    this.#betEnabled = enabled;
   }
 
   /** @param {boolean} enabled */
@@ -305,6 +325,7 @@ export class UiLayer extends EventEmitter {
         this.emit('newGame');
         break;
       default:
+        if (id.startsWith('bet-')) this.emit('bet', Number(id.slice(4)));
         break;
     }
   }
@@ -351,8 +372,11 @@ export class UiLayer extends EventEmitter {
       text.text(status, 0, -2.12 - size * 0.5, size, { color, align: 'center' });
     }
 
-    // bet / balance line
-    text.text(t('betLine', { bet: this.#bet, balance: this.#balance }), 0, -3.98 - 0.09, 0.18, { color: C.muted, align: 'center' });
+    // bet toggles row: label on the left, balance on the right
+    const rowY = -4.15;
+    text.text(t('bet'), -1.75, rowY - 0.09, 0.18, { color: C.muted, align: 'right', tracking: 0.28 });
+    const balanceLine = t('balanceLine', { balance: this.#balance });
+    text.text(balanceLine, 3.3, rowY - 0.08, text.fitSize(balanceLine, 0.16, 1.6), { color: C.muted, align: 'right' });
 
     // dev badge
     if (this.#devReport) {

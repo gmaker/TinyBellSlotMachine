@@ -13,7 +13,7 @@ import { UiLayer } from '../ui/UiLayer.js';
 import { ATLAS_SPEC, LAYOUT } from '../view/layout.js';
 import { SlotMachineView } from '../view/SlotMachineView.js';
 import { TextRenderer } from '../view/text/TextRenderer.js';
-import { GameState } from './GameState.js';
+import { BET_OPTIONS, GameState } from './GameState.js';
 import { CryptoRng } from './Rng.js';
 import { SpinController, SpinPhase } from './SpinController.js';
 
@@ -180,6 +180,7 @@ export class Game {
 
     // UI → game
     on(this.#ui, 'spin', () => this.#requestSpin('button'));
+    on(this.#ui, 'bet', (bet) => this.#setBet(bet));
     on(this.#ui, 'sound', () => this.#toggleMute());
     on(this.#ui, 'language', (code) => this.#i18n.setLanguage(code));
     on(this.#ui, 'newGame', () => this.#newGame());
@@ -193,6 +194,7 @@ export class Game {
     on(this.#input, 'mute', () => this.#toggleMute());
     on(this.#input, 'paytable', () => this.#ui.togglePanel('paytable'));
     on(this.#input, 'settings', () => this.#ui.togglePanel('settings'));
+    BET_OPTIONS.forEach((bet, i) => on(this.#input, `bet${i + 1}`, () => this.#setBet(bet)));
     on(this.#input, 'escape', () => this.#ui.closePanel());
     on(this.#input, 'newGame', () => {
       if (this.#ui.gameOver) this.#newGame();
@@ -257,10 +259,19 @@ export class Game {
 
   /** @param {boolean} immediate */
   #syncState(immediate) {
-    this.#balanceCounter.set(this.#state.balance, immediate);
+    // debits snap instantly; only wins count up
+    this.#balanceCounter.set(this.#state.balance, immediate || this.#state.balance < this.#balanceCounter.value);
     this.#winCounter.set(this.#state.lastWin, immediate);
     this.#ui.setBet(this.#state.bet);
+    this.#ui.setBetEnabled(this.#spin.isIdle && !this.#ui.gameOver);
     this.#ui.setSpinEnabled(this.#spin.isIdle && this.#state.canSpin());
+  }
+
+  /** @param {number} bet */
+  #setBet(bet) {
+    if (!this.#spin.isIdle || this.#ui.modalOpen) return;
+    this.#state.setBet(bet);
+    if (this.#state.cannotAffordBet) this.#ui.setStatus('insufficient', { bet });
   }
 
   /**
@@ -274,6 +285,8 @@ export class Game {
       if (source !== 'lever') this.#lever.autoPull();
     } else if (this.#spin.isIdle && this.#state.isBroke) {
       this.#ui.setGameOver(true);
+    } else if (this.#spin.isIdle && this.#state.cannotAffordBet) {
+      this.#ui.setStatus('insufficient', { bet: this.#state.bet });
     }
   }
 

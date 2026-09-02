@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GameState, INITIAL_BALANCE } from '../src/core/GameState.js';
+import { BET_OPTIONS, GameState, INITIAL_BALANCE } from '../src/core/GameState.js';
 import { evaluateIndices } from '../src/math/SlotMath.js';
 
 test('starts with 100 coins and bet 1', () => {
@@ -66,4 +66,37 @@ test('emits change events', () => {
   state.settleSpin(evaluateIndices([3, 1, 0])); // cherry any any = 2
   state.endSpin();
   assert.deepEqual(balances, [99, 101, 101]);
+});
+
+test('bet multipliers: 1, 5 and 10 coins are debited and multiply the payout', () => {
+  const state = new GameState();
+  assert.deepEqual([...BET_OPTIONS], [1, 5, 10]);
+  assert.equal(state.bet, 1);
+  state.setBet(10);
+  state.beginSpin();
+  assert.equal(state.balance, 90);
+  assert.throws(() => state.setBet(5), /during a spin/);
+  state.settleSpin(evaluateIndices([6, 3, 14], state.bet)); // 7,7,7 × 10
+  state.endSpin();
+  assert.equal(state.lastWin, 2000);
+  assert.equal(state.balance, 2090);
+  assert.throws(() => state.setBet(3), RangeError);
+});
+
+test('a bet larger than the balance blocks spinning but is not game over', () => {
+  const state = new GameState();
+  for (let i = 0; i < 97; i++) {
+    state.beginSpin();
+    state.settleSpin(evaluateIndices([0, 0, 0]));
+    state.endSpin();
+  }
+  assert.equal(state.balance, 3);
+  state.setBet(5);
+  assert.ok(!state.canSpin());
+  assert.ok(state.cannotAffordBet);
+  assert.ok(!state.isBroke);
+  state.setBet(1);
+  assert.ok(state.canSpin());
+  state.reset();
+  assert.equal(state.bet, 1);
 });

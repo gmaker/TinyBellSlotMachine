@@ -14,8 +14,8 @@ export const LAYOUT = Object.freeze({
   window: Object.freeze({ center: [0, WINDOW_CENTER_Y], half: [3.1, 1.75], radius: 0.18 }),
   marquee: Object.freeze({ center: [0, 4.75], half: [3.2, 0.72], radius: 0.25 }),
   display: Object.freeze({ center: [0, -1.2], half: [2.9, 0.52], radius: 0.15 }),
-  creditsDisplay: Object.freeze({ center: [-1.3, -1.2], half: [1.32, 0.36], digits: 4 }),
-  winDisplay: Object.freeze({ center: [1.55, -1.2], half: [1.02, 0.36], digits: 3 }),
+  creditsDisplay: Object.freeze({ center: [-1.5, -1.2], half: [1.25, 0.36], digits: 4 }),
+  winDisplay: Object.freeze({ center: [1.5, -1.2], half: [1.25, 0.36], digits: 4 }),
   tray: Object.freeze({ center: [0, -4.95], half: [1.7, 0.42], radius: 0.2 }),
   reel: Object.freeze({
     width: REEL_WIDTH,
